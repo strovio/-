@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Фазовый портрет голоса</title>
+    <style>
+        body {
+            display: flex; flex-direction: column; align-items: center;
+            background-color: #121212; color: white; font-family: sans-serif;
+            margin-top: 20px;
+        }
+        canvas {
+            background-color: white; border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5); margin-top: 10px;
+        }
+        button {
+            padding: 15px 30px; font-size: 18px; font-weight: bold;
+            background-color: #007bff; color: white; border: none;
+            border-radius: 8px; cursor: pointer;
+        }
+        button:active { background-color: #0056b3; }
+        .instructions { max-width: 320px; text-align: center; margin-top: 15px; color: #aaa; }
+    </style>
+</head>
+<body>
+    <button id="startBtn">Разрешить микрофон</button>
+    <div class="instructions">Потяните гласный звук "а-а-а" в микрофон</div>
+    
+    <canvas id="canvas" width="320" height="320"></canvas>
+
+    <script>
+        const btn = document.getElementById('startBtn');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        
+        let audioCtx, analyser, dataArray;
+        const delay = 8; // Задержка s(n-8) как в статье
+
+        // Рисуем сетку X-Y
+        function drawGrid() {
+            ctx.fillStyle = 'white';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.beginPath();
+            ctx.moveTo(canvas.width/2, 0); ctx.lineTo(canvas.width/2, canvas.height);
+            ctx.moveTo(0, canvas.height/2); ctx.lineTo(canvas.width, canvas.height/2);
+            ctx.strokeStyle = '#e0e0e0';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            ctx.fillStyle = 'black';
+            ctx.font = 'italic 12px sans-serif';
+            ctx.fillText('s(n-8)', canvas.width - 40, canvas.height/2 - 5);
+            ctx.fillText('s(n)', canvas.width/2 + 5, 15);
+        }
+
+        btn.addEventListener('click', async () => {
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                try {
+                    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    const source = audioCtx.createMediaStreamSource(stream);
+                    analyser = audioCtx.createAnalyser();
+                    analyser.fftSize = 2048; // Размер окна
+                    source.connect(analyser);
+                    
+                    dataArray = new Float32Array(analyser.fftSize);
+                    btn.textContent = "🎙️ Микрофон активен";
+                    btn.style.backgroundColor = "#28a745";
+                    
+                    draw();
+                } catch (err) {
+                    alert("Ошибка: микрофон не доступен.");
+                }
+            }
+        });
+
+        function draw() {
+            requestAnimationFrame(draw);
+            analyser.getFloatTimeDomainData(dataArray);
+            drawGrid();
+
+            // Ищем максимальную амплитуду для нормализации сигнала
+            let max_val = 0;
+            for(let i=0; i<dataArray.length; i++) {
+                if(Math.abs(dataArray[i]) > max_val) max_val = Math.abs(dataArray[i]);
+            }
+
+            ctx.beginPath();
+            ctx.strokeStyle = 'black';
+            ctx.lineWidth = 1.2;
+
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2;
+            const scale = canvas.width / 2.2;
+
+            for (let i = delay; i < dataArray.length; i++) {
+                let x_val = dataArray[i - delay];
+                let y_val = dataArray[i];
+
+                // Нормализуем, только если звук достаточно громкий (чтобы не рисовать шум)
+                if (max_val > 0.05) {
+                    x_val /= max_val;
+                    y_val /= max_val;
+                } else {
+                    x_val = 0;
+                    y_val = 0;
+                }
+
+                const px = cx + x_val * scale;
+                const py = cy - y_val * scale; 
+
+                if (i === delay) {
+                    ctx.moveTo(px, py);
+                } else {
+                    ctx.lineTo(px, py);
+                }
+            }
+            ctx.stroke();
+        }
+        drawGrid();
+    </script>
+</body>
+</html>
